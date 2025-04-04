@@ -12,6 +12,7 @@ class MongoCacheManager {
     this.collectionName = collectionName;
     this.client = new MongoClient(mongoUrl, { useUnifiedTopology: true });
     this.connected = false;
+    this.readOnly = false;
   }
 
   async connect() {
@@ -21,6 +22,17 @@ class MongoCacheManager {
         this.collection = this.client.db(this.dbName).collection(this.collectionName);
         this.connected = true;
         console.log("[MongoCache] Connected to MongoDB for caching.");
+
+        // Try a dry-run write to detect read-only access
+        try {
+          await this.collection.insertOne({ _test: true });
+          await this.collection.deleteOne({ _test: true });
+        } catch (e) {
+          if (e.code === 13 || e.message.includes("not authorized")) {
+            console.warn("[MongoCache] MongoDB user is read-only. Caching will be read-only.");
+            this.readOnly = true;
+          }
+        }
       } catch (error) {
         console.error("[MongoCache] MongoDB connection error:", error);
         this.connected = false;
@@ -54,8 +66,8 @@ class MongoCacheManager {
   async setCache(input, value) {
     try {
       await this.connect();
-      if (!this.connected || !this.collection) {
-        console.error("[MongoCache] Not connected to MongoDB, skipping setCache.");
+      if (!this.connected || !this.collection || this.readOnly) {
+        console.warn("[MongoCache] Skipping cache store due to read-only mode or no connection.");
         return;
       }
       const key = this.normalize(input);
