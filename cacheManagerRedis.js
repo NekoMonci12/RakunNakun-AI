@@ -1,3 +1,5 @@
+// cacheManagerRedis.js
+
 const { createClient } = require('redis');
 
 class CacheManagerRedis {

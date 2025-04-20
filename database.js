@@ -60,6 +60,21 @@ class Database {
       );
     `;
 
+    // Create ApiKeys table
+    const createApiKeysQuery = `
+      CREATE TABLE IF NOT EXISTS ApiKeys (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        API_KEY VARCHAR(255) NOT NULL UNIQUE,
+        GUILD_ID VARCHAR(255) NOT NULL,
+        USER_ID TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_guild_id FOREIGN KEY (GUILD_ID) REFERENCES Guilds(GUILD_ID)
+          ON UPDATE CASCADE
+          ON DELETE SET NULL
+      );
+    `;
+
+
     try {
       await this.pool.query(createModelsQuery);
       console.log('Models table is ready or already exists.');
@@ -67,6 +82,8 @@ class Database {
       console.log('Guilds table is ready or already exists.');
       await this.pool.query(createChatLogsQuery);
       console.log('ChatLogs table is ready or already exists.');
+      await this.pool.query(createApiKeysQuery);
+      console.log('ApiKeys table is ready or already exists.');
     } catch (error) {
       console.error('Error creating tables:', error);
     }
