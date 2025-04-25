@@ -17,10 +17,11 @@ const logDebug = (msg, ...args) => console.log(`[DEBUG] ${msg}`, ...args);
 const logError = (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args);
 
 // ——— Globals / Defaults ———
-const defaultModelId   = 'deepseek-chat';
+const defaultModelId   = 'gpt-4.1-nano';
 const defaultPersona   = 'You are a helpful assistant.';
 const defaultApiUrl    = process.env.OPENAI_BASE_URL;
-const MIN_TOKEN_THRESH = 2000;
+const MIN_TOKEN_THRESH = 1000;
+const freeTokens       = 50000;
 
 // ——— Init Shared Resources ———
 const db           = new Database();
@@ -64,7 +65,50 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
   // 3️⃣ Start Discord Bot
   const client = new Client({ intents: [GatewayIntentBits.Guilds] });
   client.once('ready', () => logInfo(`Logged in as ${client.user.tag}`));
+  
+  client.on('guildCreate', async (guild) => {
+    try {
+      const guildId      = guild.id;
+      const guildOwnerId = guild.ownerId;
+      const usersRoleId  = null;               // or '' if you prefer
+      const chatTokens   = freeTokens;                  // initial token balance
+      const chatPersona  = defaultPersona;     // your defaultPersona variable
+      const chatModels   = defaultModelId;     // your defaultModelId variable
+      const status       = 1;                  // active
+      const debug        = 0;                  // off by default
+
+      const sql = `
+        INSERT IGNORE INTO Guilds 
+          (GUILD_ID, GUILD_OWNER_ID, GUILD_USERS_ID, CHAT_TOKENS, CHAT_PERSONA, CHAT_MODELS, STATUS, DEBUG)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY 
+        UPDATE 
+          GUILD_OWNER_ID = VALUES(GUILD_OWNER_ID),
+          GUILD_USERS_ID  = VALUES(GUILD_USERS_ID),
+          CHAT_PERSONA   = VALUES(CHAT_PERSONA),
+          CHAT_MODELS     = VALUES(CHAT_MODELS),
+          STATUS          = VALUES(STATUS),
+          DEBUG           = VALUES(DEBUG)
+      `;
+
+      await db.pool.query(sql, [
+        guildId,
+        guildOwnerId,
+        usersRoleId,
+        chatTokens,
+        chatPersona,
+        chatModels,
+        status,
+        debug
+      ]);
+
+      logInfo(`Guild ${guildId} registered in database.`);
+    } catch (err) {
+      logError('Error registering new guild in database:', err);
+    }
+  });
   client.on('interactionCreate', async interaction => {
+    const actualOwnerId = interaction.guild.ownerId;
     if (!interaction.isChatInputCommand()) return;
   
     const { commandName, guildId, user, options } = interaction;
@@ -76,8 +120,10 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
         'SELECT GUILD_OWNER_ID FROM Guilds WHERE GUILD_ID = ?',
         [guildId]
       );
-  
-      if (!guildRows.length || guildRows[0].GUILD_OWNER_ID !== user.id) {
+      
+      const dbOwnerId     = guildRows.length ? guildRows[0].GUILD_OWNER_ID : null;
+
+      if (!guildRows.length || (dbOwnerId !== interaction.user.id && actualOwnerId !== interaction.user.id)) {
         return await interaction.reply({
           content: '❌ You do not have permission to use this command. Only the guild owner can use this command.',
           ephemeral: true
@@ -266,13 +312,15 @@ async function processMessage({
   if (cached) {
     const inT = Math.ceil(message.length * tokenCachedInFactor);
     const outT = Math.ceil(cached.length * tokenCachedOutFactor);
+    const used = inT + outT;
+    const remaining = Math.max(0, currentTokens - used);
     await db.pool.query(
       'INSERT INTO ChatLogs (GUILD_ID, GUILD_USERS_ID, MESSAGE_INPUT, MESSAGE_OUTPUT, CACHED) VALUES (?, ?, ?, ?, 1)',
       [guildId, userId, message, 'CACHED']
     );
     await db.pool.query(
-      'UPDATE Guilds SET CHAT_TOKENS = CHAT_TOKENS - ? WHERE GUILD_ID = ?',
-      [inT + outT, guildId]
+      'UPDATE Guilds SET CHAT_TOKENS = ? WHERE GUILD_ID = ?',
+      [remaining, guildId]
     );
     finalReply = cached;
     if (debugMode) {
@@ -310,6 +358,7 @@ async function processMessage({
   const inT   = Math.ceil(message.length * tokenInputFactor);
   const outT  = Math.ceil(reply.length * tokenOutputFactor);
   const tokensUsed = inT + outT;
+  const remaining = Math.max(0, currentTokens - tokensUsed);
   finalReply = reply;
   if (debugMode) {
     finalReply += `
@@ -329,8 +378,8 @@ async function processMessage({
     [guildId, userId, message, 'COMING SOON']
   );
   await db.pool.query(
-    'UPDATE Guilds SET CHAT_TOKENS = CHAT_TOKENS - ? WHERE GUILD_ID = ?',
-    [tokensUsed, guildId]
+    'UPDATE Guilds SET CHAT_TOKENS = ? WHERE GUILD_ID = ?',
+    [remaining, guildId]
   );
 
   return { reply: finalReply, tokensUsed };
