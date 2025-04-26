@@ -62,9 +62,18 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
       .setDescription('Delete an API key')
       .addStringOption(o => o.setName('key').setDescription('API key to delete').setRequired(true)),
     
-      new SlashCommandBuilder()
+    new SlashCommandBuilder()
       .setName('invite')
       .setDescription('Invite RakunNakun Into Your Server!'),
+    
+    new SlashCommandBuilder()
+      .setName('setpersona')
+      .setDescription('Change the persona for your server.')
+      .addStringOption(option =>
+        option.setName('persona')
+          .setDescription('The new persona text')
+          .setRequired(true)
+      ),
   ].map(c => c.toJSON());
   
   await new CommandDeployer(commands, process.env.CLIENT_ID, process.env.DISCORD_TOKEN).deploy();
@@ -122,7 +131,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
     const { commandName, guildId, user, options } = interaction;
   
     // Only run permission check for certain commands
-    const commandsRequiringOwnership = ['generate-api', 'list-api', 'delete-api'];
+    const commandsRequiringOwnership = ['generate-api', 'list-api', 'delete-api', 'setpersona'];
     if (commandsRequiringOwnership.includes(commandName)) {
       const [guildRows] = await db.pool.query(
         'SELECT GUILD_OWNER_ID FROM Guilds WHERE GUILD_ID = ?',
@@ -225,6 +234,35 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
         content: `🔗 [Click here](${discord_invite}) to invite me to your server!`,
         ephemeral: true
       });
+    }
+
+    // Handle /setpersona
+    else if (commandName === 'setpersona') {
+      const persona = options.getString('persona');
+    
+      try {
+        // Defer reply (to avoid timeout)
+        if (!interaction.deferred && !interaction.replied) {
+          await interaction.deferReply({ ephemeral: true });
+        }
+    
+        // Update the persona in database
+        await db.pool.query(
+          'UPDATE Guilds SET CHAT_PERSONA = ? WHERE GUILD_ID = ?',
+          [persona, guildId]
+        );
+    
+        logInfo(`Updated persona for guild ${guildId} to: ${persona}`);
+    
+        await interaction.editReply({
+          content: `✅ Persona updated successfully to:\n\`\`\`\n${persona}\n\`\`\``,
+        });
+      } catch (err) {
+        logError('Error while setting persona:', err);
+        await interaction.editReply({
+          content: `❌ Failed to update persona. Please try again later.`,
+        });
+      }
     }
   });
   
