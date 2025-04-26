@@ -23,6 +23,10 @@ const defaultApiUrl    = process.env.OPENAI_BASE_URL;
 const MIN_TOKEN_THRESH = 1000;
 const freeTokens       = 50000;
 
+// ——— Discord Variable ———
+const discord_clientid = process.env.CLIENT_ID
+const discord_invite   = `https://discord.com/oauth2/authorize?client_id=${discord_clientid}`;
+
 // ——— Init Shared Resources ———
 const db           = new Database();
 const cache        = new HybridCacheManager(
@@ -56,7 +60,11 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
     new SlashCommandBuilder()
       .setName('delete-api')
       .setDescription('Delete an API key')
-      .addStringOption(o => o.setName('key').setDescription('API key to delete').setRequired(true))
+      .addStringOption(o => o.setName('key').setDescription('API key to delete').setRequired(true)),
+    
+      new SlashCommandBuilder()
+      .setName('invite')
+      .setDescription('Invite RakunNakun Into Your Server!'),
   ].map(c => c.toJSON());
   
   await new CommandDeployer(commands, process.env.CLIENT_ID, process.env.DISCORD_TOKEN).deploy();
@@ -207,6 +215,14 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
   
       await interaction.reply({
         content: '🗑️ API key deleted (if it existed).',
+        ephemeral: true
+      });
+    }
+  
+    // Handle /invite
+    else if (commandName === 'invite') {
+      await interaction.reply({
+        content: `🔗 [Click here](${discord_invite}) to invite me to your server!`,
         ephemeral: true
       });
     }
