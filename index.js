@@ -65,6 +65,10 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
     new SlashCommandBuilder()
       .setName('invite')
       .setDescription('Invite RakunNakun Into Your Server!'),
+
+    new SlashCommandBuilder()
+      .setName('debugmode')
+      .setDescription('Toggle Debug Mode!'),
     
     new SlashCommandBuilder()
       .setName('setpersona')
@@ -131,7 +135,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
     const { commandName, guildId, user, options } = interaction;
   
     // Only run permission check for certain commands
-    const commandsRequiringOwnership = ['generate-api', 'list-api', 'delete-api', 'setpersona'];
+    const commandsRequiringOwnership = ['generate-api', 'list-api', 'delete-api', 'setpersona', 'debugmode'];
     if (commandsRequiringOwnership.includes(commandName)) {
       const [guildRows] = await db.pool.query(
         'SELECT GUILD_OWNER_ID FROM Guilds WHERE GUILD_ID = ?',
@@ -264,6 +268,32 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
         });
       }
     }
+
+    else if (commandName === 'debugmode') {
+    // Check if user has permission (optional, similar to other commands)
+    const [guildRows] = await db.pool.query(
+      'SELECT GUILD_OWNER_ID FROM Guilds WHERE GUILD_ID = ?',
+      [guildId]
+    );
+
+    // Toggle DEBUG value
+    const [rows] = await db.pool.query(
+      'SELECT DEBUG FROM Guilds WHERE GUILD_ID = ?',
+      [guildId]
+    );
+    const currentDebug = rows.length ? rows[0].DEBUG : 0;
+    const newDebug = currentDebug === 1 ? 0 : 1;
+
+    await db.pool.query(
+      'UPDATE Guilds SET DEBUG = ? WHERE GUILD_ID = ?',
+      [newDebug, guildId]
+    );
+
+    await interaction.reply({
+      content: `✅ Debug mode is now ${newDebug === 1 ? 'enabled' : 'disabled'}.`,
+      ephemeral: true
+    });
+  }
   });
   
   client.login(process.env.DISCORD_TOKEN);
@@ -332,7 +362,7 @@ async function processMessage({
   if (!guildRows.length) return { error: 'Guild not registered' };
   let { CHAT_MODELS, CHAT_TOKENS, DEBUG, CHAT_PERSONA } = guildRows[0];
   let currentTokens       = Number(CHAT_TOKENS) || 0;
-  if (currentTokens < MIN_TOKEN_THRESH) return { error: 'Insufficient tokens' };
+  if (currentTokens < MIN_TOKEN_THRESH) return { reply: 'Insufficient tokens' };
 
   let modelIdToUse        = CHAT_MODELS || defaultModelId;
   let personaToUse        = CHAT_PERSONA || defaultPersona;
