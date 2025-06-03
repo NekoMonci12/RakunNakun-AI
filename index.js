@@ -9,7 +9,6 @@ const Database           = require('./database');
 const CommandDeployer    = require('./deploy-commands');
 const HybridCacheManager = require('./hybridCacheManager');
 const MessageSplitter    = require('./messageSplitter');
-const PastebinClient     = require('./pastebinClient');
 const { MessageFlags } = require('discord-api-types/v10');
 
 // ——— Logging Helpers ———
@@ -35,7 +34,6 @@ const cache        = new HybridCacheManager(
   process.env.MONGO_DB_NAME
 );
 const splitter     = new MessageSplitter(2000);
-const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
 
 (async () => {
   // 1️⃣ Database tables
