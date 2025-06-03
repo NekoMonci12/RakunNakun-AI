@@ -10,6 +10,7 @@ const CommandDeployer    = require('./deploy-commands');
 const HybridCacheManager = require('./hybridCacheManager');
 const MessageSplitter    = require('./messageSplitter');
 const PastebinClient     = require('./pastebinClient');
+const { MessageFlags } = require('discord-api-types/v10');
 
 // ——— Logging Helpers ———
 const logInfo  = (msg, ...args) => console.log(`[INFO]  ${msg}`, ...args);
@@ -147,7 +148,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
       if (!guildRows.length || (dbOwnerId !== interaction.user.id && actualOwnerId !== interaction.user.id)) {
         return await interaction.reply({
           content: '❌ You do not have permission to use this command. Only the guild owner can use this command.',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
     }
@@ -192,7 +193,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
   
       await interaction.reply({
         content: `✅ API key generated: \`${apiKey}\``,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   
@@ -206,14 +207,14 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
       if (!rows.length) {
         return await interaction.reply({
           content: 'ℹ️ No API keys found for this server.',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
   
       const keyList = rows.map(row => `• \`${row.API_KEY}\` → <@${row.USER_ID}>`).join('\n');
       await interaction.reply({
         content: `🔑 API keys for this guild:\n${keyList}`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   
@@ -228,7 +229,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
   
       await interaction.reply({
         content: '🗑️ API key deleted (if it existed).',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   
@@ -236,7 +237,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
     else if (commandName === 'invite') {
       await interaction.reply({
         content: `🔗 [Click here](${discord_invite}) to invite me to your server!`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
 
@@ -247,7 +248,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
       try {
         // Defer reply (to avoid timeout)
         if (!interaction.deferred && !interaction.replied) {
-          await interaction.deferReply({ ephemeral: true });
+          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
         }
     
         // Update the persona in database
@@ -291,7 +292,7 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
 
     await interaction.reply({
       content: `✅ Debug mode is now ${newDebug === 1 ? 'enabled' : 'disabled'}.`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
   });
