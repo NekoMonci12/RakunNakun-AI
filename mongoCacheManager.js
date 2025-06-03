@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { MongoClient } = require('mongodb');
 
 class MongoCacheManager {
@@ -6,10 +7,10 @@ class MongoCacheManager {
    * @param {string} dbName - Database name.
    * @param {string} collectionName - Collection name for caching.
    */
-  constructor(mongoUrl, dbName, collectionName = 'cache') {
+  constructor(mongoUrl, dbName, collectionName) {
     this.mongoUrl = mongoUrl;
     this.dbName = dbName;
-    this.collectionName = collectionName;
+    this.collectionName = collectionName || process.env.MONGO_COLLECTION_NAME || 'cache';
     this.client = new MongoClient(mongoUrl, { useUnifiedTopology: true });
     this.connected = false;
     this.readOnly = false;
@@ -63,23 +64,41 @@ class MongoCacheManager {
     return null;
   }
 
-  async setCache(input, value) {
-    try {
-      await this.connect();
-      if (!this.connected || !this.collection || this.readOnly) {
-        console.warn("[MongoCache] Skipping cache store due to read-only mode or no connection.");
-        return;
-      }
-      const key = this.normalize(input);
-      const result = await this.collection.updateOne(
-        { key },
-        { $set: { value, updatedAt: new Date() } },
-        { upsert: true }
-      );
-      console.log("[MongoCache] Stored value for key:", key, "Update result:", result.result);
-    } catch (error) {
-      console.error("[MongoCache] Error storing cache for key:", this.normalize(input), error);
+  async getByHash(hash) {
+    await this.connect();
+    return await this.collection.findOne({ hash });
+  }
+
+  async getAllEmbeddings() {
+    await this.connect();
+    return await this.collection.find({ embedding: { $exists: true } }).toArray();
+  }
+
+  async setCache(input, value, embedding, hash) {
+    await this.connect();
+    if (!this.connected || !this.collection || this.readOnly) return;
+
+    const key = this.normalize(input);
+
+    const count = await this.collection.estimatedDocumentCount();
+    const maxSize = 5000;
+    if (count >= maxSize) {
+      await this.collection.deleteOne({}, { sort: { updatedAt: 1 } });
     }
+
+    await this.collection.updateOne(
+      { key },
+      {
+        $set: {
+          key,
+          value,
+          updatedAt: new Date(),
+          embedding,
+          hash
+        }
+      },
+      { upsert: true }
+    );
   }
 }
 

@@ -17,7 +17,7 @@ const logDebug = (msg, ...args) => console.log(`[DEBUG] ${msg}`, ...args);
 const logError = (msg, ...args) => console.error(`[ERROR] ${msg}`, ...args);
 
 // ——— Globals / Defaults ———
-const defaultModelId   = 'gpt-4.1-nano';
+const defaultModelId   = process.env.OPENAI_DEFAULT_MODEL;
 const defaultPersona   = 'You are a helpful assistant.';
 const defaultApiUrl    = process.env.OPENAI_BASE_URL;
 const MIN_TOKEN_THRESH = 1000;
