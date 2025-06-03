@@ -77,15 +77,31 @@ class Database {
 
     try {
       await this.pool.query(createModelsQuery);
-      console.log('Models table is ready or already exists.');
+      console.log('Models table is ready');
       await this.pool.query(createGuildsQuery);
-      console.log('Guilds table is ready or already exists.');
+      console.log('Guilds table is ready');
       await this.pool.query(createChatLogsQuery);
-      console.log('ChatLogs table is ready or already exists.');
+      console.log('ChatLogs table is ready');
       await this.pool.query(createApiKeysQuery);
-      console.log('ApiKeys table is ready or already exists.');
+      console.log('ApiKeys table is ready');
     } catch (error) {
       console.error('Error creating tables:', error);
+    }
+    await this.seedModels();
+  }
+
+  async seedModels() {
+    try {
+      const [rows] = await this.pool.query('SELECT COUNT(*) as count FROM Models');
+      if (rows[0].count === 0) {
+        await this.pool.query(`
+          INSERT INTO Models (MODEL_ID, TOKEN_INPUT, TOKEN_OUTPUT, TOKEN_CACHED_INPUT, TOKEN_CACHED_OUPUT, API_KEY, API_URL)
+          VALUES ('gpt-4.1', 1, 1, 1, 1, '', 'https://api.llm7.io/v1/chat/completions');
+        `);
+        console.log('Seeded Models table.');
+      }
+    } catch (error) {
+      console.error('Error seeding Models table:', error);
     }
   }
 }
