@@ -79,6 +79,15 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
           .setDescription('The new persona text')
           .setRequired(true)
       ),
+
+    new SlashCommandBuilder()
+      .setName('answer')
+      .setDescription('Reply to a specific message by ID or reply to the last message.')
+      .addStringOption(option =>
+        option.setName('message_id')
+          .setDescription('ID of the message to reply')
+          .setRequired(false)
+      ),
   ].map(c => c.toJSON());
   
   await new CommandDeployer(commands, process.env.CLIENT_ID, process.env.DISCORD_TOKEN).deploy();
@@ -294,6 +303,77 @@ const pastebin     = new PastebinClient(process.env.PASTEBIN_DEV_KEY);
       content: `✅ Debug mode is now ${newDebug === 1 ? 'enabled' : 'disabled'}.`,
       flags: MessageFlags.Ephemeral
     });
+  }
+
+  else if (commandName === 'answer') {
+    try {
+      const messageId = options.getString('message_id');
+      let targetMessage;
+
+      if (messageId) {
+        targetMessage = await interaction.channel.messages.fetch(messageId);
+      } else {
+        const messages = await interaction.channel.messages.fetch({ limit: 1 });
+        targetMessage = messages.last();
+      }
+
+      if (!targetMessage || targetMessage.author.bot) {
+        await interaction.reply({ content: 'No valid message to reply to.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      if (targetMessage.reference && targetMessage.reference.messageId) {
+
+        const repliedToMessage = await interaction.channel.messages.fetch(targetMessage.reference.messageId);
+        if (repliedToMessage && repliedToMessage.author.id !== interaction.user.id) {
+          const messageContent = repliedToMessage.content;
+          logInfo(`[/answer] replying to message: ${messageContent}`);
+
+          if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply();
+          }
+
+          const { reply } = await processMessage({
+            message: messageContent,
+            authKey: interaction.user.id,
+            isDiscord: true,
+            guildId: interaction.guildId,
+            userId: interaction.user.id
+          });
+
+          if (reply) {
+            await interaction.editReply(reply);
+          } else {
+            await interaction.editReply('❌ Failed to generate a reply.');
+          }
+          return;
+        }
+      }
+
+      const messageContent = targetMessage.content;
+      logInfo(`[/answer] replying to message: ${messageContent}`);
+
+      if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply();
+      }
+
+      const { reply } = await processMessage({
+        message: messageContent,
+        authKey: interaction.user.id,
+        isDiscord: true,
+        guildId: interaction.guildId,
+        userId: interaction.user.id
+      });
+
+      if (reply) {
+        await interaction.editReply(reply);
+      } else {
+        await interaction.editReply('❌ Failed to generate a reply.');
+      }
+    } catch (err) {
+      logError('Error in /answer:', err);
+      await interaction.reply({ content: 'Error processing answer.', flags: MessageFlags.Ephemeral });
+    }
   }
   });
   
