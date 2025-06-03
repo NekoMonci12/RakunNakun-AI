@@ -31,7 +31,6 @@ const discord_invite   = `https://discord.com/oauth2/authorize?client_id=${disco
 // ——— Init Shared Resources ———
 const db           = new Database();
 const cache        = new HybridCacheManager(
-  { url: process.env.REDIS_URL }, 
   process.env.MONGO_URL, 
   process.env.MONGO_DB_NAME
 );
