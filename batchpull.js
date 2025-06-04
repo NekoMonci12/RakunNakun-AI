@@ -12,7 +12,7 @@ const MongoCacheManager = require('./mongoCacheManager');
 const mongoCache = new MongoCacheManager(
   process.env.MONGO_URL,
   process.env.MONGO_DB_NAME,
-  'cache'
+  process.env.MONGO_COLLECTION_NAME
 );
 
 const models = [
@@ -45,7 +45,7 @@ async function getEmbedding(text) {
   return embeddings[0];
 }
 
-// Check cache: exact hash match or semantic similarity
+// Check cache: exact hash match or semantic similarity with pagination
 async function getCachedResult(input, threshold = 0.9) {
   const inputHash = hashInput(input);
 
@@ -56,62 +56,51 @@ async function getCachedResult(input, threshold = 0.9) {
     return exactMatch.value;
   }
 
-  // Semantic search with embedding & worker thread
+  // Semantic search with embedding & worker thread (paginated)
   const inputEmbedding = await getEmbedding(input);
-  const cachedEntries = await mongoCache.getAllEmbeddings();
 
-  if (cachedEntries.length === 0) {
-    console.log("[HybridCache] No cache entries with embeddings found.");
-    return null;
+  const pageSize = 100;
+  let page = 0;
+  let globalBestMatch = null;
+  let globalBestScore = threshold;
+
+  while (true) {
+    const cachedEntries = await mongoCache.getEmbeddingsPage(page, pageSize);
+    if (cachedEntries.length === 0) break;
+
+    // Run worker on current page
+    const { bestMatch, bestScore } = await new Promise((resolve, reject) => {
+      const worker = new Worker(path.resolve(__dirname, './cosineSimilarityWorker.js'));
+
+      worker.postMessage({ inputEmbedding, cachedEntries, threshold: globalBestScore });
+
+      worker.on('message', resolve);
+      worker.on('error', reject);
+      worker.on('exit', (code) => {
+        if (code !== 0) {
+          console.warn(`[HybridCache] Worker stopped with exit code ${code}`);
+        }
+      });
+    });
+
+    if (bestScore > globalBestScore) {
+      globalBestScore = bestScore;
+      globalBestMatch = bestMatch;
+    }
+
+    // Early exit if similarity is very high (e.g. 0.95)
+    if (globalBestScore >= 0.95) break;
+
+    page++;
   }
 
-    return new Promise((resolve, reject) => {
-    const worker = new Worker(path.resolve(__dirname, './cosineSimilarityWorker.js'));
-
-    let resolved = false;
-
-    worker.postMessage({ inputEmbedding, cachedEntries, threshold });
-
-    worker.on('message', (msg) => {
-        if (msg.error) {
-        console.error('[HybridCache] Worker error:', msg.error);
-        if (!resolved) {
-            resolved = true;
-            resolve(null);
-            worker.terminate();
-        }
-        } else {
-        const { bestMatch, bestScore } = msg;
-        if (!resolved) {
-            resolved = true;
-            if (bestMatch) {
-            console.log(`[HybridCache] Semantic match found with similarity ${bestScore.toFixed(2)}`);
-            resolve(bestMatch.value);
-            } else {
-            console.log("[HybridCache] No suitable semantic cache match found.");
-            resolve(null);
-            }
-            // Terminate after a short delay to ensure message flush
-            setTimeout(() => worker.terminate(), 50);
-        }
-        }
-    });
-
-    worker.on('error', (err) => {
-        console.error("[HybridCache] Worker thread error:", err);
-        if (!resolved) {
-        resolved = true;
-        reject(err);
-        }
-    });
-
-    worker.on('exit', (code) => {
-        if (code !== 0) {
-        console.warn(`[HybridCache] Worker stopped with exit code ${code}`);
-        }
-    });
-    });
-
+  if (globalBestMatch) {
+    console.log(`[HybridCache] Semantic match found with similarity ${globalBestScore.toFixed(2)}`);
+    return globalBestMatch.value;
+  } else {
+    console.log("[HybridCache] No suitable semantic cache match found.");
+    return null;
+  }
 }
 
 // Store input + response in cache with embedding and hash
@@ -168,7 +157,6 @@ async function fetchLLMResponse(input, retries = 5, backoff = 1000) {
   }
   throw new Error('Max retries reached due to rate limiting.');
 }
-
 
 // Process a single input line: check cache, fetch if needed, store result
 async function processInput(input) {

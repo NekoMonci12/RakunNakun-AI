@@ -23,7 +23,8 @@ class MongoCacheManager {
         this.collection = this.client.db(this.dbName).collection(this.collectionName);
         this.connected = true;
         console.log("[MongoCache] Connected to MongoDB for caching.");
-
+        await this.collection.createIndex({ hash: 1 }, { unique: true });
+        await this.collection.createIndex({ key: 1 }, { unique: true });
         // Try a dry-run write to detect read-only access
         try {
           await this.collection.insertOne({ _test: true });
@@ -74,17 +75,20 @@ class MongoCacheManager {
     return await this.collection.find({ embedding: { $exists: true } }).toArray();
   }
 
+  async getEmbeddingsPage(page = 0, pageSize = 100) {
+    await this.connect();
+    return await this.collection
+      .find({ embedding: { $exists: true } })
+      .skip(page * pageSize)
+      .limit(pageSize)
+      .toArray();
+  }
+
   async setCache(input, value, embedding, hash) {
     await this.connect();
     if (!this.connected || !this.collection || this.readOnly) return;
 
     const key = this.normalize(input);
-
-    const count = await this.collection.estimatedDocumentCount();
-    const maxSize = 5000;
-    if (count >= maxSize) {
-      await this.collection.deleteOne({}, { sort: { updatedAt: 1 } });
-    }
 
     await this.collection.updateOne(
       { key },

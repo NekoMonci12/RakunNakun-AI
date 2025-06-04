@@ -31,42 +31,47 @@ class HybridCacheManager {
       return exactMatch.value;
     }
 
-    // 🤖 Embedding-based semantic search
+    // 🤖 Embedding-based semantic search with pagination
     const inputEmbedding = await getEmbedding(input);
-    const cachedEntries = await this.mongoCache.getAllEmbeddings();
 
-    if (cachedEntries.length === 0) {
-      console.log("[HybridCache] No cache entries with embeddings found.");
-      return null;
+    let page = 0;
+    const pageSize = 1000;
+    let globalBestMatch = null;
+    let globalBestScore = threshold;
+
+    while (true) {
+      const cachedEntries = await this.mongoCache.getEmbeddingsPage(page, pageSize);
+      if (cachedEntries.length === 0) break;
+
+      // Run worker on this page
+      const result = await new Promise((resolve, reject) => {
+        const worker = new Worker(path.resolve(__dirname, './cosineSimilarityWorker.js'));
+        worker.postMessage({ inputEmbedding, cachedEntries, threshold: globalBestScore });
+
+        worker.on('message', resolve);
+        worker.on('error', reject);
+        worker.on('exit', (code) => {
+          if (code !== 0) console.warn(`[HybridCache] Worker stopped with exit code ${code}`);
+        });
+      });
+
+      if (result.bestScore > globalBestScore) {
+        globalBestScore = result.bestScore;
+        globalBestMatch = result.bestMatch;
+      }
+
+      if (globalBestScore >= 0.95) break;
+
+      page++;
     }
 
-    // Return a Promise that resolves with the worker's result
-    return new Promise((resolve, reject) => {
-      const worker = new Worker(path.resolve(__dirname, './cosineSimilarityWorker.js'));
-
-      worker.postMessage({ inputEmbedding, cachedEntries, threshold });
-
-      worker.on('message', ({ bestMatch, bestScore }) => {
-        if (bestMatch) {
-          console.log(`[HybridCache] Semantic match found with similarity ${bestScore.toFixed(2)}`);
-          resolve(bestMatch.value);
-        } else {
-          console.log("[HybridCache] No suitable semantic cache match found.");
-          resolve(null);
-        }
-        worker.terminate();
-      });
-
-      worker.on('error', (err) => {
-        console.error("[HybridCache] Worker thread error:", err);
-        reject(err);
-      });
-
-      worker.on('exit', (code) => {
-        if (code !== 0)
-          console.warn(`[HybridCache] Worker stopped with exit code ${code}`);
-      });
-    });
+    if (globalBestMatch) {
+      console.log(`[HybridCache] Semantic match found with similarity ${globalBestScore.toFixed(2)}`);
+      return globalBestMatch.value;
+    } else {
+      console.log("[HybridCache] No suitable semantic cache match found.");
+      return null;
+    }
   }
 
   async setCache(input, value) {
