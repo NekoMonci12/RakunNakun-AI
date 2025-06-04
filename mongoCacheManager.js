@@ -104,6 +104,19 @@ class MongoCacheManager {
       { upsert: true }
     );
   }
+
+  // Add this function at the bottom of your main file (index.js)
+  async getMongoCacheCount() {
+    try {
+      await this.connect(); // Ensure connection
+      const count = await this.collection.countDocuments();
+      console.log(`Total cache entries in MongoDB: ${count}`);
+      return count;
+    } catch (err) {
+      console.error('Error counting cache documents:', err);
+      return null;
+    }
+  }
 }
 
 module.exports = MongoCacheManager;

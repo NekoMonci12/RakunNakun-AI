@@ -1,15 +1,24 @@
 // index.js
 
 require('dotenv').config();
+const settings = require('./settings.json');
+const emojis = require('./emoji.json');
 const express = require('express');
 const axios   = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const { Client, GatewayIntentBits, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const Database           = require('./database');
 const CommandDeployer    = require('./deploy-commands');
 const HybridCacheManager = require('./hybridCacheManager');
 const MessageSplitter    = require('./messageSplitter');
 const { MessageFlags } = require('discord-api-types/v10');
+const MongoCacheManager = require('./mongoCacheManager');
+
+// ——— MongoDB Instances ———
+const cacheManager = new MongoCacheManager(
+  process.env.MONGO_URL,
+  process.env.MONGO_DB_NAME
+);
 
 // ——— Logging Helpers ———
 const logInfo  = (msg, ...args) => console.log(`[INFO]  ${msg}`, ...args);
@@ -44,7 +53,7 @@ const splitter     = new MessageSplitter(2000);
   const commands = [
     new SlashCommandBuilder()
       .setName('chat')
-      .setDescription('Chat with the RakunNakun')
+      .setDescription(`Chat with the ${settings.instanceName}`)
       .addStringOption(o => o.setName('message').setDescription('Your question').setRequired(true)),
       
     new SlashCommandBuilder()
@@ -62,7 +71,7 @@ const splitter     = new MessageSplitter(2000);
     
     new SlashCommandBuilder()
       .setName('invite')
-      .setDescription('Invite RakunNakun Into Your Server!'),
+      .setDescription(`Invite ${settings.instanceName} Into Your Server!`),
 
     new SlashCommandBuilder()
       .setName('debugmode')
@@ -85,6 +94,10 @@ const splitter     = new MessageSplitter(2000);
           .setDescription('ID of the message to reply')
           .setRequired(false)
       ),
+
+    new SlashCommandBuilder()
+      .setName('info')
+      .setDescription('Show bot info'),
   ].map(c => c.toJSON());
   
   await new CommandDeployer(commands, process.env.CLIENT_ID, process.env.DISCORD_TOKEN).deploy();
@@ -372,6 +385,76 @@ const splitter     = new MessageSplitter(2000);
       await interaction.reply({ content: 'Error processing answer.', flags: MessageFlags.Ephemeral });
     }
   }
+
+  else if (commandName === 'info') {
+    const usedMB = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+    const ping   = client.ws.ping;
+    const guildCount = client.guilds.cache.size;
+    const cacheCount = await cacheManager.getMongoCacheCount();
+    const cpuUsage = process.cpuUsage();
+    const cpuPercent = ((cpuUsage.user + cpuUsage.system) / (1000 * 1000 * 1000) * 100).toFixed(2); // approximate
+    const uptimeSeconds = Math.floor(process.uptime());
+
+
+    const embed  = {
+      title: 'Bot Info',
+      color: 0x00ff00,
+      image: {
+        url: settings.coverImage
+      },
+      fields: [
+        {
+          name: `${emojis.ping} Latency`,
+          value: `${ping} ms`,
+          inline: true
+        },
+        {
+          name: `${emojis.cpu} CPU Usage`,
+          value: `${cpuPercent}%`,
+          inline: true
+        },
+        {
+          name: `${emojis.ram} Memory Usage`,
+          value: `${usedMB} MB`,
+          inline: true
+        },
+        {
+          name: `${emojis.gear} Joined Servers`,
+          value: `${guildCount}`,
+          inline: true
+        },
+        {
+          name: `${emojis.cache} Cache Entries`,
+          value: `${formatNumber(cacheCount)} Prompts`,
+          inline: true
+        },
+        {
+          name: `${emojis.calendar} Uptime`,
+          value: `${Math.floor(uptimeSeconds / 3600)}h ${Math.floor((uptimeSeconds % 3600) / 60)}m`,
+          inline: true
+        }
+      ]
+    };
+
+    const buttonsRow = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setLabel('GitHub Repo')
+          .setStyle(ButtonStyle.Link)
+          .setURL('https://github.com/NekoMonci12/RakunNakun-AI')
+          .setEmoji(emojis.github),
+        new ButtonBuilder()
+          .setLabel('Discord Server')
+          .setStyle(ButtonStyle.Link)
+          .setURL('https://dsc.gg/yuemi')
+          .setEmoji(emojis.logo)
+      );
+    
+    await interaction.reply({
+      embeds: [embed],
+      components: [buttonsRow],
+    });
+  }
   });
   
   client.login(process.env.DISCORD_TOKEN);
@@ -545,4 +628,16 @@ async function processMessage({
   );
 
   return { reply: finalReply, tokensUsed };
+}
+
+function formatNumber(num) {
+  if (num >= 1_000_000_000) {
+    return (num / 1_000_000_000).toFixed(1) + 'b';
+  } else if (num >= 1_000_000) {
+    return (num / 1_000_000).toFixed(1) + 'm';
+  } else if (num >= 1_000) {
+    return (num / 1_000).toFixed(1) + 'k';
+  } else {
+    return num.toString();
+  }
 }
